@@ -1,4 +1,4 @@
-FROM python:3.13-slim-bookworm
+FROM python:3.14-slim
 
 ENV NOMINATIM_VERSION=5.2.0
 
@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libicu-dev \
     osm2pgsql>=1.8 \
     pkg-config \
-    postgresql-client-15 \
+    postgresql-client \
  && pip install --no-cache-dir \
     nominatim_db==$NOMINATIM_VERSION \
  && apt-get purge -y --auto-remove \
