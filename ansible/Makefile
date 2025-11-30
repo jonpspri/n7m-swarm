@@ -29,6 +29,9 @@ ifndef PLAYBOOK
 endif
 	${ANSIBLE_PLAYBOOK} playbooks/${PLAYBOOK}.yaml
 
+reset: venv
+	${ANSIBLE_PLAYBOOK} up.yaml -e feed_arg_v='reset'
+
 venv: ## Initiailze or update the virtual environment
 	[ -d ./.venv ] || uv venv --seed
 	uv pip install --upgrade -r requirements.txt

@@ -77,3 +77,9 @@
       ansible.builtin.reboot: {}
       become: true
       when: reboot_required_r.stat.exists
+
+    - name: Update settings for resolvd.conf
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: "^#Cache=no-negative"
+        line: "Cache=no-negative"

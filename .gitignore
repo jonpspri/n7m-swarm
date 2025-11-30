@@ -4,3 +4,5 @@ pgdata/
 .venv/
 __pycache__/
 .terraform/
+
+/ansible/inventories

@@ -5,6 +5,7 @@
     AWS_REGION: "{{ region_v }}"
   vars:
     debug_container_p: true
+    feed_arg_v: "setup"
   tasks:
 
   - name: Get VPC private subnets
@@ -203,6 +204,14 @@
           DefaultActions:
             - Type: forward
               TargetGroupArn: "{{ target_group_r.target_group_arn }}"
+        - Protocol: HTTPS
+          SslPolicy: ELBSecurityPolicy-TLS13-1-2-Ext2-PQ-2025-09
+          Port: 443
+          DefaultActions:
+              - Type: forward
+                TargetGroupArn: "{{ target_group_r.target_group_arn }}"
+          Certificates:
+              - CertificateArn: "{{ ca_certificate_arn }}"
     register: alb_r
 
   - name: Retreive information about the RDS cluster
@@ -254,6 +263,8 @@
               awslogs-group: /ecs/n7m
               awslogs-region: "{{ region_v }}"
               awslogs-stream-prefix: ecs
+          command: 
+            - "{{ feed_arg_v }}" 
           environment:
             - name: PGHOST
               value: "{{ rds_cluster_info_r.clusters[0].endpoint }}"
@@ -445,25 +456,32 @@
             awslogs-group: /ecs/n7m
             awslogs-region: "{{ region_v }}"
             awslogs-stream-prefix: web-sc
-        # services:
-        #   - port_name: web
-        #     client_aliases:
-        #       - port: 80
-        #         dns_name: web
 
-  - name: Get CloudMap services and instances
-    cloudmap_info:
-      namespace_id: "{{ cloudmap_namespace_r.namespace.Id }}"
-    register: cloudmap_info_r
-
-  - name: Display ALB IP
+  - name: ALB DNS Name is
     ansible.builtin.debug:
-        msg: "Application Load Balancer: {{ alb_r.dns_name }}"
+        var: alb_r.dns_name
 
-  - name: Display CloudMap IPs
+  - name: Wait for DNS to be available
+    ansible.builtin.command:
+        cmd: "dig +short {{ alb_r.dns_name }}"
+    register: alb_dig_r
+    retries: 30
+    delay: 20
+    until: "alb_dig_r.stdout is truthy"
+
+  - name: Create Route 53 A records for ALB IP addresses
+    amazon.aws.route53:
+      state: present
+      zone: "{{ (n7m_domain | split('.'))[-2:] | join('.') }}"
+      record: "{{ prefix_v + '.' + n7m_domain }}"
+      type: A
+      ttl: 60  # Match the TTL on the ALB records
+      value: "{{ alb_dig_r.stdout | split('\n') }}"
+      overwrite: true
+      wait: true
+
+  - name: Display target domain name
     ansible.builtin.debug:
-      msg: |
-        {{ item.name }}: {{ item.instances | map(attribute='ipv4') | join(', ') }}
-    loop: "{{ cloudmap_info_r.services }}"
-    loop_control:
-      label: "{{ item.name }}"
+        msg: "Application is reachable at {{ prefix_v + '.' + n7m_domain }}"
+
+

@@ -10,6 +10,14 @@
   #  and there's no charge for their definition.
   #
 
+  # Delete Route 53 records
+  - name: Delete Route 53 A record for ALB
+    amazon.aws.route53:
+      state: absent
+      zone: "{{ (n7m_domain | split('.'))[-2:] | join('.') }}"
+      record: "{{ prefix_v + '.' + n7m_domain }}"
+      type: A
+
   # Delete the services
   - name: Delete ECS services
     ecs_service:

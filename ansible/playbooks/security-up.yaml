@@ -69,6 +69,10 @@
             from_port: 80
             to_port: 80
             cidr_ip: "{{ ip_response.content }}/32"
+          - proto: tcp
+            from_port: 443
+            to_port: 443
+            cidr_ip: "{{ ip_response.content }}/32"
       register: alb_sg_r
 
     # ECS WEB SECURITY GROUP (depends on ALB SG)
