@@ -1,6 +1,7 @@
-- hosts: localhost
+- name: Create Bastion Host
+  hosts: localhost
   connection: local
-  gather_facts: False
+  gather_facts: false
   vars:
     ansible_python_interpreter: ../.venv/bin/python
   tasks:
@@ -21,6 +22,25 @@
           "tag:Name": "{{ prefix_v }}-bastion-sg"
       register: bastion_sg_f
 
+    # Retreive information on instance_type
+    - name: Retrieve information on Instance Type
+      ec2_describe_instance_types:
+        filters:
+          - name: instance-type
+            values:
+              - "{{ instance_type_v }}"
+      register: instance_type_r
+
+    # Select the appropriate AMI for the instacnce_type and region
+    - name: Retreive AMI candidates
+      amazon.aws.ec2_ami_info:
+        owners:
+          - amazon
+        filters:
+          architecture: "{{ instance_type_r.instance_types[0].processor_info.supported_architectures[0] }}"
+          name: "ubuntu/images/*/ubuntu-noble-24.04-*-server-*"
+      register: amis_r
+
     # CREATE BASTION INSTANCE
     - name: Creating Bastion Host
       amazon.aws.ec2_instance:
@@ -29,8 +49,8 @@
         region: "{{ region_v }}"
         instance_type: "{{ instance_type_v }}"
         image:
-          id: "{{ bastion_ami_v }}"
-        wait: yes
+          id: "{{ amis_r.images[-1].image_id }}"
+        wait: true
         wait_timeout: 300
         tags:
           Name: "{{ prefix_v }}-bastion"
@@ -46,40 +66,15 @@
             groups:
               - "{{ bastion_sg_f.security_groups[0].group_id }}"
             subnet_id: "{{ vpc_public_subnet_f.subnets[0].id }}"
-      register: bastionHost_out
+      register: bastion_host_r
 
     - name: Refresh inventory
       ansible.builtin.meta: refresh_inventory
 
     - name: Wait for SSH to become available on bastion
       ansible.builtin.wait_for:
-        host: "{{ bastionHost_out.instances[0].public_ip_address }}"
+        host: "{{ bastion_host_r.instances[0].public_ip_address }}"
         port: 22
         delay: 10
         timeout: 300
         state: started
-
-- hosts: "_bastion"
-  tasks:
-    - name: Update packages to latest
-      ansible.builtin.apt:
-        state: latest
-        update_cache: true
-        name: "*"
-      become: true
-
-    - name: Is a reboot required?
-      ansible.builtin.stat:
-        path: /var/run/reboot-required
-      register: reboot_required_r
-
-    - name: Reboot the system
-      ansible.builtin.reboot: {}
-      become: true
-      when: reboot_required_r.stat.exists
-
-    - name: Update settings for resolvd.conf
-      ansible.builtin.lineinfile:
-        path: /etc/systemd/resolved.conf
-        regexp: "^#Cache=no-negative"
-        line: "Cache=no-negative"

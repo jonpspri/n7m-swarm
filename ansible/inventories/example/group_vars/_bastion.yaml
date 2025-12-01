@@ -1,0 +1,85 @@
+# =============================================================================
+# Group Variables for Bastion Hosts (_bastion group)
+# =============================================================================
+# These variables apply to all hosts in the "_bastion" group, which are
+# dynamically discovered via the aws_ec2 inventory plugin based on the
+# "Role: bastion" tag.
+#
+# The bastion host acts as an SSH jump server and runs Ansible tasks that
+# require VPC-internal access (EFS mounting, RDS setup, ECS operations).
+#
+# Note: Shared variables (prefix_v, region_v, keypair_v, owner_v) are defined
+# in group_vars/all.yaml to ensure consistency across all hosts.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SSH Connection Settings
+# -----------------------------------------------------------------------------
+# ansible_user: The SSH username for connecting to bastion hosts.
+#               Ubuntu AMIs use 'ubuntu', Amazon Linux uses 'ec2-user'.
+ansible_user: ubuntu
+
+# ansible_ssh_private_key_file: Path to the private key file for SSH access.
+#                               Must correspond to the keypair_v specified
+#                               in group_vars/all.yaml.
+ansible_ssh_private_key_file: ~/.ssh/my-keypair.pem
+
+# -----------------------------------------------------------------------------
+# AWS Credentials for Bastion Operations
+# -----------------------------------------------------------------------------
+# These credentials are used by the bastion host when running AWS operations
+# (EFS, RDS, ECS, Secrets Manager, etc.). The bastion uses these to interact
+# with AWS services from within the VPC.
+#
+# access_key_v: AWS Access Key ID. Retrieved from environment variable to
+#               avoid storing credentials in version control.
+access_key_v: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+
+# secret_key_v: AWS Secret Access Key. Retrieved from environment variable.
+secret_key_v: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+
+# -----------------------------------------------------------------------------
+# OpenStreetMap Data Configuration
+# -----------------------------------------------------------------------------
+# The n7m application uses OpenStreetMap data from Geofabrik for geocoding.
+# These variables specify which region's data to download and configure.
+# Browse available regions at: https://download.geofabrik.de/
+#
+# osm_continent_v: The continent directory on Geofabrik download server.
+#                  Options: africa, antarctica, asia, australia-oceania,
+#                           central-america, europe, north-america, south-america
+osm_continent_v: europe
+
+# osm_region_v: The specific region/country within the continent.
+#               Must match a valid Geofabrik region name. For small test
+#               deployments, use small regions like 'monaco' or 'liechtenstein'.
+#               Browse: https://download.geofabrik.de/<continent>/
+osm_region_v: monaco
+
+# -----------------------------------------------------------------------------
+# AWS Secrets Manager and KMS Configuration
+# -----------------------------------------------------------------------------
+# docker_credentials_arn: ARN of the Secrets Manager secret containing Docker
+#                         Hub credentials for pulling private container images.
+#                         Format: arn:aws:secretsmanager:<region>:<account>:secret:<name>
+#                         The secret should contain: {"username":"...","password":"..."}
+docker_credentials_arn: "arn:aws:secretsmanager:eu-west-1:123456789012:secret:docker_authentication-XXXXXX"
+
+# secretsmanager_key: ARN of the KMS key used to encrypt Secrets Manager secrets.
+#                     The ECS execution role needs kms:Decrypt permission on this key.
+#                     Format: arn:aws:kms:<region>:<account>:key/<key-id>
+secretsmanager_key: "arn:aws:kms:eu-west-1:123456789012:key/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# -----------------------------------------------------------------------------
+# Application Domain Configuration
+# -----------------------------------------------------------------------------
+# n7m_domain: The base domain name for the n7m application.
+#             A subdomain will be created as: <prefix_v>.<n7m_domain>
+#             The parent domain must be managed in Route 53.
+n7m_domain: "n7m.example.com"
+
+# ca_certificate_arn: ARN of the ACM certificate for HTTPS on the ALB.
+#                     Must be a valid certificate in the deployment region that
+#                     covers the target domain (e.g., *.n7m.example.com).
+#                     Create via: aws acm request-certificate
+ca_certificate_arn: "arn:aws:acm:eu-west-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"

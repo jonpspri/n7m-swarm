@@ -1,8 +1,12 @@
 *.pbf
 data/
 pgdata/
+
+.ansible/
 .venv/
 __pycache__/
-.terraform/
 
-/ansible/inventories
+# Ansible inventories contain sensitive configuration - only track examples and docs
+/ansible/inventories/*
+!/ansible/inventories/README.md
+!/ansible/inventories/example/
