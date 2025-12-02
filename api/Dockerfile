@@ -27,5 +27,9 @@ ENV PGHOST=gis \
 
 EXPOSE 8000
 
-CMD [ "python3", "-m", "uvicorn", "nominatim_api.server.falcon.server:run_wsgi", "--proxy-headers", \
-    "--host", "0.0.0.0", "--port", "8000", "--factory" ]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/status.php')"
+
+CMD [ "python3", "-m", "uvicorn", "nominatim_api.server.falcon.server:run_wsgi", \
+      "--proxy-headers", "--log-level", "debug", \
+      "--host", "0.0.0.0", "--port", "8000", "--factory" ]

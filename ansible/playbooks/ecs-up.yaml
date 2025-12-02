@@ -326,7 +326,67 @@
           security_groups:
             - "{{ ecs_feed_sg_r.group_id }}"
 
-    - name: ECS Task Definitions for n7m interface
+    - name: Enumerate the containers to run as independent services
+      ansible.builtin.set_fact:
+        n7m_microservice_containers_f:
+          - name: api
+            image: ghcr.io/jonpspri/n7m-api
+            logConfiguration:
+              logDriver: awslogs
+              options:
+                awslogs-group: /ecs/n7m
+                awslogs-region: "{{ region_v }}"
+                awslogs-stream-prefix: api
+            environment:
+              - name: PGHOST
+                value: "{{ rds_cluster_info_r.clusters[0].endpoint }}"
+              - name: PGUSER
+                value: postgres
+              - name: PGPASSWORD
+                value: "{{ lookup('amazon.aws.secretsmanager_secret',
+                  prefix_v + '-postgis-master-user-password') }}"
+              - name: WEB-CONCURRENCY
+                value: "2"
+            portMappings:
+              - name: api
+                containerPort: 8000
+                protocol: tcp
+          - name: ui
+            image: ghcr.io/jonpspri/n7m-ui
+            logConfiguration:
+              logDriver: awslogs
+              options:
+                awslogs-group: /ecs/n7m
+                awslogs-region: "{{ region_v }}"
+                awslogs-stream-prefix: ui
+            portMappings:
+              - name: ui
+                containerPort: 80
+                protocol: tcp
+          - name: mcp
+            image: ghcr.io/jonpspri/n7m-mcp
+            portMappings:
+              - name: mcp
+                containerPort: 8000
+                protocol: tcp
+            environment:
+              - name: N7M_NOMINATIM_BASE_URL
+                value: http://api:8000
+            logConfiguration:
+              logDriver: awslogs
+              options:
+                awslogs-group: /ecs/n7m
+                awslogs-region: "{{ region_v }}"
+                awslogs-stream-prefix: mcp
+            command:
+              - "--transport"
+              - "http"
+              - "--host"
+              - "0.0.0.0"
+              - "--port"
+              - "8000"
+
+    - name: ECS Task Definitions for n7m microservice containers
       community.aws.ecs_taskdefinition:
         family: "{{ prefix_v }}-{{ item.name }}-td"
         state: "present"
@@ -336,84 +396,11 @@
         network_mode: awsvpc
         execution_role_arn: "{{ execution_role_r.iam_role.arn }}"
         task_role_arn: "{{ task_role_r.iam_role.arn }}"
+        force_create: true  # TODO: Make this a variable parameter
         containers:
           - "{{ item }}"
-      loop:
-        - name: api
-          image: ghcr.io/jonpspri/n7m-api
-          logConfiguration:
-            logDriver: awslogs
-            options:
-              awslogs-group: /ecs/n7m
-              awslogs-region: "{{ region_v }}"
-              awslogs-stream-prefix: api
-          environment:
-            - name: PGHOST
-              value: "{{ rds_cluster_info_r.clusters[0].endpoint }}"
-            - name: PGUSER
-              value: postgres
-            - name: PGPASSWORD
-              value: "{{ lookup('amazon.aws.secretsmanager_secret',
-                prefix_v + '-postgis-master-user-password') }}"
-            - name: WEB-CONCURRENCY
-              value: "2"
-          portMappings:
-            - name: api
-              containerPort: 8080
-              protocol: tcp
-        - name: ui
-          image: ghcr.io/jonpspri/n7m-ui
-          logConfiguration:
-            logDriver: awslogs
-            options:
-              awslogs-group: /ecs/n7m
-              awslogs-region: "{{ region_v }}"
-              awslogs-stream-prefix: ui
-          portMappings:
-            - name: ui
-              containerPort: 80
-              protocol: tcp
-        - name: web
-          image: ghcr.io/jonpspri/n7m-web:8be516c
-          portMappings:
-            - name: web
-              containerPort: 80
-              protocol: tcp
-          logConfiguration:
-            logDriver: awslogs
-            options:
-              awslogs-group: /ecs/n7m
-              awslogs-region: "{{ region_v }}"
-              awslogs-stream-prefix: web
-        - name: mcp
-          image: ghcr.io/jonpspri/n7m-mcp
-          portMappings:
-            - name: mcp
-              containerPort: 8000
-              protocol: tcp
-          environment:
-            - name: N7M_NOMINATIM_BASE_URL
-              value: http://api:8080
-          logConfiguration:
-            logDriver: awslogs
-            options:
-              awslogs-group: /ecs/n7m
-              awslogs-region: "{{ region_v }}"
-              awslogs-stream-prefix: mcp
-          command:
-            - "--transport"
-            - "http"
-            - "--host"
-            - "0.0.0.0"
-            - "--port"
-            - "8000"
-
-      register: n7m_td_r
-
-    - name: What are the results of Task Definition creation?
-      ansible.builtin.debug:
-        var: n7m_td_r
-        verbosity: 2
+      loop: "{{ n7m_microservice_containers_f }}"
+      register: microservice_td_r
 
     - name: Internal services (MCP, API and UI)
       ecs_service:
@@ -445,8 +432,50 @@
                     item.containerDefinitions[0].portMappings[0].containerPort
                     }}"
                   dns_name: "{{ item.containerDefinitions[0].name }}"
-      loop: "{{ n7m_td_r.results | map(attribute='taskdefinition') |
-        selectattr('family', '!=', prefix_v + '-web-td') }}"
+      loop: "{{ microservice_td_r.results | map(attribute='taskdefinition') }}"
+
+    - name: ECS Task Definitions for n7m public container(s)
+      community.aws.ecs_taskdefinition:
+        family: "{{ prefix_v }}-web-td"
+        state: "present"
+        launch_type: FARGATE
+        memory: 512
+        cpu: 256
+        network_mode: awsvpc
+        execution_role_arn: "{{ execution_role_r.iam_role.arn }}"
+        task_role_arn: "{{ task_role_r.iam_role.arn }}"
+        containers:
+          - name: web
+            image: ghcr.io/jonpspri/n7m-web:8be516c
+            portMappings:
+              - name: web
+                containerPort: 80
+                protocol: tcp
+            logConfiguration:
+              logDriver: awslogs
+              options:
+                awslogs-group: /ecs/n7m
+                awslogs-region: "{{ region_v }}"
+                awslogs-stream-prefix: web
+      register: public_td_r
+
+    - name: Wait for the services to be available in Cloud Map
+      cloudmap_info:
+        namespace_name: "{{ prefix_v }}-ecs-cluster"
+        service_name: "{{ item }}"
+        include_instances: true
+      register: cloudmap_info_r
+      retries: 20
+      delay: 15
+      until: "('services' in cloudmap_info_r)
+        and (cloudmap_info_r.services
+          | map(attribute='instances') | flatten
+          | map(attribute='ipv4') | flatten)
+        is truthy"
+      loop: "{{ n7m_microservice_containers_f
+        | map(attribute='portMappings')
+        | flatten
+        | map(attribute='name') }}"
 
     - name: Web service - Publicly accessible via ALB
       ecs_service:
@@ -454,11 +483,7 @@
         name: "{{ prefix_v }}-web-svc"
         cluster: "{{ prefix_v }}-ecs-cluster"
         desired_count: 1
-        task_definition: "{{
-          (n7m_td_r.results | map(attribute='taskdefinition') |
-          selectattr('family', 'equalto', prefix_v + '-web-td')
-            | first).taskDefinitionArn
-          }}"
+        task_definition: "{{ public_td_r.taskdefinition.taskDefinitionArn }}"
         load_balancers:
           - targetGroupArn: "{{ target_group_r.target_group_arn }}"
             containerName: web
