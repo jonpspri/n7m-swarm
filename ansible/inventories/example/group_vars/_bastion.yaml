@@ -83,3 +83,15 @@ n7m_domain: "n7m.example.com"
 #                     covers the target domain (e.g., *.n7m.example.com).
 #                     Create via: aws acm request-certificate
 ca_certificate_arn: "arn:aws:acm:eu-west-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# -----------------------------------------------------------------------------
+# Container Image Tags
+# -----------------------------------------------------------------------------
+# Pin the version of the container images to be used. Use 'latest' for the
+# most recent build, or specify a specific tag for reproducible deployments.
+#
+api_image_tag_v: latest
+feed_image_tag_v: latest
+mcp_image_tag_v: latest
+ui_image_tag_v: latest
+web_image_tag_v: latest

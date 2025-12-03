@@ -103,3 +103,14 @@
         - postgis_topology
         - fuzzystrmatch
         - postgis_tiger_geocoder
+
+    - name: Create the 'www-data' user that is checked for by Nominatim
+      community.postgresql.postgresql_user:
+        state: present
+        name: www-data
+        login_host: "{{ postgis_db_cluster_r.endpoint }}"
+        login_port: "{{ postgis_db_cluster_r.port }}"
+        login_db: postgres
+        login_user: postgres
+        login_password: "{{ lookup('amazon.aws.secretsmanager_secret',
+          prefix_v + '-postgis-master-user-password') }}"

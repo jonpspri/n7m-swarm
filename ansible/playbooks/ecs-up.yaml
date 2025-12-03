@@ -6,8 +6,10 @@
     AWS_SECRET_ACCESS_KEY: "{{ secret_key_v }}"
     AWS_REGION: "{{ region_v }}"
   vars:
+    ansible_python_interpreter: /home/ubuntu/.venv/bin/python3
     debug_container_p: true
     feed_arg_v: "setup"
+    reset_database_v: false
   tasks:
     - name: Get VPC private subnets
       amazon.aws.ec2_vpc_subnet_info:
@@ -257,7 +259,7 @@
             initProcessEnabled: true
         n7m_feed:
           name: n7m-feed
-          image: ghcr.io/jonpspri/n7m-feed
+          image: "{{ image_root_v }}-feed:{{ feed_image_tag_v }}"
           mountPoints:
             - sourceVolume: data
               containerPath: /data
@@ -312,6 +314,17 @@
               rootDirectory: /data
       register: n7m_feed_td_r
 
+    - name: Delete the current database if necessary
+      when: reset_database_v | bool
+      community.postgresql.postgresql_db:
+        name: nominatim
+        state: absent
+        login_host: "{{ rds_cluster_info_r.clusters[0].endpoint }}"
+        login_port: "{{ rds_cluster_info_r.clusters[0].port }}"
+        login_user: postgres
+        login_password: "{{ lookup('amazon.aws.secretsmanager_secret',
+          prefix_v + '-postgis-master-user-password') }}"
+
     - name: Load feeds into postgis
       community.aws.ecs_task:
         operation: run
@@ -330,7 +343,7 @@
       ansible.builtin.set_fact:
         n7m_microservice_containers_f:
           - name: api
-            image: ghcr.io/jonpspri/n7m-api
+            image: "{{ image_root_v }}-api:{{ api_image_tag_v }}"
             logConfiguration:
               logDriver: awslogs
               options:
@@ -352,7 +365,7 @@
                 containerPort: 8000
                 protocol: tcp
           - name: ui
-            image: ghcr.io/jonpspri/n7m-ui
+            image: "{{ image_root_v }}-ui:{{ ui_image_tag_v }}"
             logConfiguration:
               logDriver: awslogs
               options:
@@ -364,7 +377,7 @@
                 containerPort: 80
                 protocol: tcp
           - name: mcp
-            image: ghcr.io/jonpspri/n7m-mcp
+            image: "{{ image_root_v }}-mcp:{{ mcp_image_tag_v }}"
             portMappings:
               - name: mcp
                 containerPort: 8000
@@ -446,7 +459,7 @@
         task_role_arn: "{{ task_role_r.iam_role.arn }}"
         containers:
           - name: web
-            image: ghcr.io/jonpspri/n7m-web:8be516c
+            image: "{{ image_root_v }}-web:{{ web_image_tag_v }}"
             portMappings:
               - name: web
                 containerPort: 80

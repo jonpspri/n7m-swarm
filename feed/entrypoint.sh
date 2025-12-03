@@ -31,9 +31,9 @@ if [ "$1" = 'reset' ]; then
   if psql --command "DROP DATABASE nominatim;"; then
     echo "Database does not exist"
   fi
-  if psql --command "DROP USER \"www-data\";"; then
-    echo "User does not exist"
-  fi
+  # if psql --command "DROP USER \"www-data\";"; then
+  #   echo "User does not exist"
+  # fi
   exit 0
 fi
 
@@ -66,17 +66,13 @@ if [ "$1" = 'setup' ]; then
   fi
 
   # create required users that the tool checks
-  createuser www-data
+  # createuser www-data  # Moved to ansible
 
   echo "Starting Import"
   echo "Number of processing units: $PROCESSING_UNITS"
 
-  # time the import so we can compare database configuration
-  time nominatim import "${NOMINATIM_IMPORT_FLAGS:-}" --osm-file "/data/$OSM_FILENAME" --project-dir /data --threads "$PROCESSING_UNITS"
-  if [ $? != 0 ]; then
-    echo "Import failed"
-    exit 1
-  fi
+  # shellcheck disable=SC2086
+  time nominatim import ${NOMINATIM_IMPORT_FLAGS:-} --osm-file "/data/$OSM_FILENAME" --project-dir /data --threads "$PROCESSING_UNITS"
   echo "Import complete"
 
   exit 0
