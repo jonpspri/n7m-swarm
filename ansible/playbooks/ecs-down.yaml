@@ -7,6 +7,28 @@
     AWS_REGION: "{{ region_v }}"
   tasks:
 
+    # Delete Cognito resources
+    - name: Find Cognito User Pool Client by name
+      cognito_userpoolclient:
+        state: present
+        name: "{{ prefix_v }}-alb-client"
+        user_pool_id: "{{ cognito_user_pool_id }}"
+      register: cognito_client_id_r
+      ignore_errors: true
+
+    - name: Delete Managed Login Branding for the app client
+      cognito_managed_login_branding:
+        state: absent
+        user_pool_id: "{{ cognito_user_pool_id }}"
+        client_id: "{{ cognito_client_id_r.client.client_id }}"
+      when: cognito_client_id_r.client is defined
+
+    - name: Delete Cognito User Pool Client
+      cognito_userpoolclient:
+        state: absent
+        name: "{{ prefix_v }}-alb-client"
+        user_pool_id: "{{ cognito_user_pool_id }}"
+
     # Delete Route 53 records
     - name: Delete Route 53 A record for ALB
       amazon.aws.route53:
