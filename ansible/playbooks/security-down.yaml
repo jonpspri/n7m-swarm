@@ -1,8 +1,11 @@
-- hosts: localhost
+---
+- name: Delete Security Groups
+  hosts: localhost
   connection: local
-  gather_facts: False
+  gather_facts: false
   vars:
     ansible_python_interpreter: ../.venv/bin/python
+    fail_on_missed_group_v: true
   tasks:
     # RETRIEVE VPC INFORMATION
     - name: Get VPC info by name
@@ -14,7 +17,8 @@
 
     - name: Fail if VPC not found
       ansible.builtin.fail:
-        msg: "VPC with name '{{ prefix_v }}-vpc' not found in region {{ region_v }}"
+        msg: >-
+          VPC with name '{{ prefix_v }}-vpc' not found in region {{ region_v }}
       when: vpc_info.vpcs | length == 0
 
     - name: Set VPC ID fact
@@ -22,21 +26,12 @@
         vpc_id: "{{ vpc_info.vpcs[0].id }}"
 
     # Delete security groups in reverse order of dependencies
-    # EFS SG (referenced by bastion and ecs-feed)
-    - name: Delete EFS security group
-      amazon.aws.ec2_security_group:
-        region: "{{ region_v }}"
-        name: "{{ prefix_v }}-efs-sg"
-        state: absent
-      ignore_errors: yes
-
     # Aurora SG (referenced by bastion, ecs-feed, ecs-web)
     - name: Delete Aurora PostgreSQL security group
       amazon.aws.ec2_security_group:
         region: "{{ region_v }}"
         name: "{{ prefix_v }}-aurora-postgresql-sg"
         state: absent
-      ignore_errors: yes
 
     # ECS Web SG
     - name: Delete ECS web security group
@@ -44,23 +39,13 @@
         region: "{{ region_v }}"
         name: "{{ prefix_v }}-ecs-web-sg"
         state: absent
-      ignore_errors: yes
 
     # ECS Feed SG
-    - name: Delete ECS feed security group
+    - name: Delete EFS feed security group
       amazon.aws.ec2_security_group:
         region: "{{ region_v }}"
-        name: "{{ prefix_v }}-ecs-feed-sg"
+        name: "{{ prefix_v }}-efs-sg"
         state: absent
-      ignore_errors: yes
-
-    # Bastion SG (referenced by aurora and efs)
-    - name: Delete Bastion security group
-      amazon.aws.ec2_security_group:
-        region: "{{ region_v }}"
-        name: "{{ prefix_v }}-bastion-sg"
-        state: absent
-      ignore_errors: yes
 
     # ALB SG first (no dependents)
     - name: Delete ALB security group
@@ -68,7 +53,14 @@
         region: "{{ region_v }}"
         name: "{{ prefix_v }}-alb-sg"
         state: absent
-      ignore_errors: yes
+
+    # Bastion SG (referenced by aurora and efs)
+    - name: Delete Bastion security group
+      amazon.aws.ec2_security_group:
+        region: "{{ region_v }}"
+        name: "{{ prefix_v }}-bastion-sg"
+        state: absent
+      ignore_errors: true
 
     # Catch any remaining security groups that might have been missed
     - name: Get remaining security groups for VPC
@@ -86,6 +78,8 @@
       loop: "{{ sg_info.security_groups }}"
       when: item.group_name != 'default'
       register: remaining_sg_r
-      ignore_errors: yes
 
-
+    - name: Fail if we deleted any additional groups
+      when: fail_on_missed_group_v and remaining_sg_r is changed
+      ansible.builtin.fail:
+        msg: "security-down playbook needs attention -- some security groups were missed"

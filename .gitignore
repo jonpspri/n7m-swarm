@@ -10,3 +10,5 @@ __pycache__/
 /ansible/inventories/*
 !/ansible/inventories/README.md
 !/ansible/inventories/example/
+
+.DS_Store

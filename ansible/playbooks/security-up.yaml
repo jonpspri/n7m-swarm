@@ -41,23 +41,6 @@
             cidr_ip: "{{ ip_response.content }}/32"
       register: bastion_sg_r
 
-    # ECS FEED SECURITY GROUP (outbound only, no dependencies)
-    - name: Create Security Group for ECS feed tasks
-      amazon.aws.ec2_security_group:
-        name: "{{ prefix_v }}-ecs-feed-sg"
-        description: >-
-          Allow ECS feed tasks to access PostgreSQL, EFS, and internet
-        region: "{{ region_v }}"
-        vpc_id: "{{ vpc_id_f }}"
-        tags:
-          "Name": "{{ prefix_v }}-ecs-feed-sg"
-        rules:
-          - proto: tcp
-            from_port: 443
-            to_port: 443
-            cidr_ip: 0.0.0.0/0
-      register: ecs_feed_sg_r
-
     # ALB SECURITY GROUP (no dependencies - create before ECS Web SG)
     - name: Create Security Group for ALB
       amazon.aws.ec2_security_group:
@@ -129,10 +112,6 @@
           - proto: tcp
             from_port: 5432
             to_port: 5432
-            group_id: "{{ ecs_feed_sg_r.group_id }}"
-          - proto: tcp
-            from_port: 5432
-            to_port: 5432
             group_id: "{{ ecs_web_sg_r.group_id }}"
       register: aurora_sg_r
 
@@ -140,7 +119,7 @@
     - name: Create Security Group for EFS
       amazon.aws.ec2_security_group:
         name: "{{ prefix_v }}-efs-sg"
-        description: Allow port 2049 from the bastion server and ECS feed tasks
+        description: Allow port 2049 from the bastion server
         region: "{{ region_v }}"
         vpc_id: "{{ vpc_id_f }}"
         tags:
@@ -150,8 +129,4 @@
             from_port: 2049
             to_port: 2049
             group_id: "{{ bastion_sg_r.group_id }}"
-          - proto: tcp
-            from_port: 2049
-            to_port: 2049
-            group_id: "{{ ecs_feed_sg_r.group_id }}"
       register: efs_sg_r

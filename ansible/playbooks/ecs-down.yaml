@@ -46,7 +46,6 @@
         force_deletion: true
         # wait: true
       loop:
-        - web
         - api
         - ui
         - mcp
@@ -61,11 +60,15 @@
         state: absent
         wait: true
 
-    # Delete the target group
-    - name: Delete target group
+    # Delete the target groups
+    - name: Delete target groups
       community.aws.elb_target_group:
-        name: "{{ prefix_v }}-n7m-web-tg"
+        name: "{{ prefix_v }}-n7m-{{ item }}-tg"
         state: absent
+      loop:
+        - ui
+        - api
+        - mcp
 
     # Delete the Cloud Map namespace (wait for services to delete)
     - name: Delete Cloud Map namespace (wait for services to delete)
@@ -84,36 +87,6 @@
       # retries: 5
       # delay: 10
       until: cluster_delete_result is succeeded
-
-    # Clean up IAM roles and policies (no charge, but good practice)
-
-    # Check for IAM role existence first to ensure idempotence
-    #
-    # - name: Check if IAM task role exists
-    #   amazon.aws.iam_role_info:
-    #     name: "{{ prefix_v }}-container-task-role"
-    #   register: task_role_info
-    #
-    # - name: Check if IAM execution role exists
-    #   amazon.aws.iam_role_info:
-    #     name: "{{ prefix_v }}-container-execution-role"
-    #   register: execution_role_info
-    #
-    # - name: Delete execute command policy from task role
-    #   amazon.aws.iam_policy:
-    #     state: absent
-    #     iam_type: role
-    #     iam_name: "{{ prefix_v }}-container-task-role"
-    #     policy_name: "{{ prefix_v }}-execute-command-policy"
-    #   when: task_role_info.iam_roles | length > 0
-    #
-    # - name: Delete credentials access policy from execution role
-    #   amazon.aws.iam_policy:
-    #     state: absent
-    #     iam_type: role
-    #     iam_name: "{{ prefix_v }}-container-execution-role"
-    #     policy_name: "{{ prefix_v }}-access-credentials"
-    #   when: execution_role_info.iam_roles | length > 0
 
     - name: Delete IAM task role
       amazon.aws.iam_role:
@@ -134,6 +107,3 @@
         - "{{ prefix_v }}-api-td"
         - "{{ prefix_v }}-ui-td"
         - "{{ prefix_v }}-mcp-td"
-        - "{{ prefix_v }}-web-td"
-        # Some leftovers just to be sure
-        - "{{ prefix_v }}-efs-configurator"

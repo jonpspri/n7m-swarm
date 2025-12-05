@@ -18,7 +18,7 @@ up: venv ## Bring up infrastructure
 	${ANSIBLE_PLAYBOOK} up.yaml
 
 down: venv ## Tear down infrastructure
-	${ANSIBLE_PLAYBOOK} down.yaml
+	ANSIBLE_COW_SELECTION=skeleton ${ANSIBLE_PLAYBOOK} down.yaml
 
 playbook: venv ## Run a playbook from playbooks/ directory (usage: make playbook PLAYBOOK=foo)
 ifndef PLAYBOOK

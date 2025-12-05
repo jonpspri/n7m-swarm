@@ -2,10 +2,14 @@
 - name: Create a python virtual environment to facilitate PostGIS
   hosts: "_bastion"
   tasks:
-    - name: Install python3-virtualenv and python3-pip
+    - name: Install packages needed to provision PostGIS and Nominatim
       ansible.builtin.apt:
         name:
+          - libicu-dev
           - libpq-dev
+          - osm2pgsql>=1.8
+          - pkg-config
+          - postgresql-client
           - python3-pip
           - python3-virtualenv
       become: true
@@ -16,6 +20,7 @@
         name:
           - boto3
           - botocore
+          - nominatim-db
           - packaging
           - psycopg2
 
@@ -39,8 +44,7 @@
 
     - name: Get Aurora PostgreSQL Security Group
       amazon.aws.ec2_security_group_info:
-        filters:
-            "tag:Name": "{{ prefix_v }}-aurora-postgresql-sg"
+        filters: {"tag:Name": "{{ prefix_v }}-aurora-postgresql-sg"}
       register: aurora_postgresql_sq_f
 
     - name: Set Aurora PostgreSQL security group fact
@@ -86,7 +90,9 @@
         db_instance_class: db.t4g.medium
         wait: false
 
-    - name: Install postgis extensions in postgres database
+    - name: |
+        Install postgis extensions in postgres database
+        (Wait for database to become available)
       community.postgresql.postgresql_ext:
         state: present
         name: "{{ item }}"
@@ -104,7 +110,7 @@
         - fuzzystrmatch
         - postgis_tiger_geocoder
 
-    - name: Create the 'www-data' user that is checked for by Nominatim
+    - name: Create the 'www-data' user (checked for by Nominatim)
       community.postgresql.postgresql_user:
         state: present
         name: www-data
@@ -114,3 +120,57 @@
         login_user: postgres
         login_password: "{{ lookup('amazon.aws.secretsmanager_secret',
           prefix_v + '-postgis-master-user-password') }}"
+
+    - name: Check the current state of the database
+      ansible.builtin.shell:
+        executable:
+          /bin/bash
+        cmd: |
+          set -euo pipefail
+          source /home/ubuntu/.venv/bin/activate
+          nominatim admin --check-database
+      environment:
+        PGHOST: "{{ postgis_db_cluster_r.endpoint }}"
+        PGPORT: "{{ postgis_db_cluster_r.port }}"
+        PGDATABASE: postgres
+        PGUSER: postgres
+        PGPASSWORD: "{{ lookup('amazon.aws.secretsmanager_secret',
+          prefix_v + '-postgis-master-user-password') }}"
+      ignore_errors: true
+      register: check_database_r
+
+    - name: Drop, recreate and reload the database
+      when: check_database_r.rc > 0
+      block:
+        - name: Drop nominatim database
+          community.postgresql.postgresql_db:
+            db: nominatim
+            state: absent
+            login_host: "{{ postgis_db_cluster_r.endpoint }}"
+            login_port: "{{ postgis_db_cluster_r.port }}"
+            login_user: postgres
+            login_password: "{{ lookup('amazon.aws.secretsmanager_secret',
+              prefix_v + '-postgis-master-user-password') }}"
+
+        - name: |
+            Import the map files into the database
+            (Use 'make ssh tail -f /efs/data/nominatim-import.log' to monitor)
+          ansible.builtin.shell:
+            executable:
+              /bin/bash
+            cmd: |
+              set -euo pipefail
+              source /home/ubuntu/.venv/bin/activate
+              nominatim import \
+                --osm-file "/efs/data/{{ osm_region_v }}-latest.osm.pbf" \
+                --project-dir /efs/data \
+                --threads "$(nproc)" \
+                |& tee /efs/data/nominatim-import.log
+          environment:
+            PGHOST: "{{ postgis_db_cluster_r.endpoint }}"
+            PGPORT: "{{ postgis_db_cluster_r.port }}"
+            PGDATABASE: postgres
+            PGUSER: postgres
+            PGPASSWORD: "{{ lookup('amazon.aws.secretsmanager_secret',
+              prefix_v + '-postgis-master-user-password') }}"
+          register: check_database_r
