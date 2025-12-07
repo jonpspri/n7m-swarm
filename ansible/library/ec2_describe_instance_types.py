@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+# ruff: noqa: E402
 
 # Copyright: Contributors to the Ansible project
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
@@ -20,7 +21,8 @@ options:
     instance_types:
         description:
           - List of instance types to describe.
-          - Supports wildcards (e.g., C(c5*) to match all c5 instance types).
+          - Must be exact instance type names (e.g., C(t3.micro), C(m5.large)).
+          - For wildcard matching, use the I(filters) option with C(instance-type) filter instead.
           - Maximum of 100 instance types.
           - If not provided, all instance types are returned.
         required: false
@@ -31,6 +33,7 @@ options:
         description:
           - A list of filters to apply.
           - Each filter is a dict with I(name) and I(values) keys.
+          - Filter values support wildcards (e.g., C(t3.*) to match all t3 instance types).
           - See U(https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstanceTypes.html)
             for possible filters.
           - Filter names and values are case sensitive.
@@ -67,10 +70,12 @@ EXAMPLES = r"""
       - t3.medium
   register: t3_types
 
-# Get all c5 instance types using wildcard
+# Get all c5 instance types using wildcard filter
 - ec2_describe_instance_types:
-    instance_types:
-      - "c5*"
+    filters:
+      - name: instance-type
+        values:
+          - "c5.*"
   register: c5_types
 
 # Filter for current generation instance types with GPU
@@ -108,11 +113,12 @@ EXAMPLES = r"""
           - "true"
   register: free_tier_types
 
-# Combine instance types and filters
+# Combine multiple filters (m5 family with 4 vCPUs)
 - ec2_describe_instance_types:
-    instance_types:
-      - "m5*"
     filters:
+      - name: instance-type
+        values:
+          - "m5.*"
       - name: vcpu-info.default-vcpus
         values:
           - "4"
@@ -126,6 +132,18 @@ EXAMPLES = r"""
           - arm64
           - x86_64
   register: multi_arch_types
+
+# Combine specific instance types with filters
+- ec2_describe_instance_types:
+    instance_types:
+      - t3.micro
+      - t3.small
+      - t3.medium
+    filters:
+      - name: processor-info.supported-architecture
+        values:
+          - x86_64
+  register: filtered_t3_types
 """
 
 RETURN = r"""
@@ -183,12 +201,12 @@ instance_types:
                 sustained_clock_speed_in_ghz:
                     description: Sustained clock speed in GHz.
                     type: float
-        vcpu_info:
+        v_cpu_info:
             description: vCPU information.
             returned: always
             type: dict
             contains:
-                default_vcpus:
+                default_v_cpus:
                     description: Default number of vCPUs.
                     type: int
                 default_cores:
@@ -210,7 +228,7 @@ instance_types:
             returned: always
             type: dict
             contains:
-                size_in_mib:
+                size_in_mi_b:
                     description: Memory size in MiB.
                     type: int
         instance_storage_supported:
@@ -222,7 +240,7 @@ instance_types:
             returned: when instance_storage_supported is true
             type: dict
             contains:
-                total_size_in_gb:
+                total_size_in_g_b:
                     description: Total instance storage size in GB.
                     type: int
                 disks:
@@ -293,7 +311,7 @@ instance_types:
                     description: List of GPU devices.
                     type: list
                     elements: dict
-                total_gpu_memory_in_mib:
+                total_gpu_memory_in_mi_b:
                     description: Total GPU memory in MiB.
                     type: int
         fpga_info:
@@ -353,6 +371,8 @@ try:
 except ImportError:
     pass  # caught by AnsibleAWSModule
 
+from ansible.module_utils.common.dict_transformations import camel_dict_to_snake_dict
+
 from ansible_collections.community.aws.plugins.module_utils.modules import (
     AnsibleCommunityAWSModule as AnsibleAWSModule,
 )
@@ -370,24 +390,6 @@ def ansible_filters_to_boto3_filters(filters_list):
     if not filters_list:
         return None
     return [{"Name": f["name"], "Values": f["values"]} for f in filters_list]
-
-
-def camel_to_snake(name):
-    """Convert CamelCase to snake_case."""
-    import re
-
-    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
-    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
-
-
-def convert_keys_to_snake_case(obj):
-    """Recursively convert dictionary keys from CamelCase to snake_case."""
-    if isinstance(obj, dict):
-        return {camel_to_snake(k): convert_keys_to_snake_case(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_keys_to_snake_case(item) for item in obj]
-    else:
-        return obj
 
 
 class EC2InstanceTypesManager:
@@ -462,7 +464,7 @@ def main():
     )
 
     # Convert keys to snake_case for Ansible convention
-    instance_type_list = [convert_keys_to_snake_case(item) for item in raw_results]
+    instance_type_list = [camel_dict_to_snake_dict(item) for item in raw_results]
 
     module.exit_json(
         changed=False,
