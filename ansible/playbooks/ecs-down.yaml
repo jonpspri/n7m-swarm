@@ -103,7 +103,6 @@
         family: "{{ item }}"
         state: absent
       loop:
-        - "{{ prefix_v }}-n7m-feed"
         - "{{ prefix_v }}-api-td"
         - "{{ prefix_v }}-ui-td"
         - "{{ prefix_v }}-mcp-td"

@@ -1,5 +1,7 @@
+---
 name: Build and test containers
 
+# yamllint disable-line rule:truthy
 on:
   pull_request:
     branches:
@@ -21,7 +23,7 @@ jobs:
       attestations: write
     strategy:
       matrix:
-        container: [api, feed, gis, ui, web]
+        container: [api, ui]
 
     steps:
       # - name: Set up QEmu
@@ -64,7 +66,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          context: "{{defaultContext}}:${{ matrix.container }}"
+          context: "{{defaultContext}}:docker/${{ matrix.container }}"
 
       - name: Generate artifact attestation
         if: github.event_name != 'pull_request'
